@@ -36,7 +36,7 @@ resource "aws_instance" "blog" {
   ami           = data.aws_ami.app_ami.id
   instance_type = var.instance_type
 
-  vpc_security_group_ids = [module.blog.security_group_id]
+  vpc_security_group_ids = [module.blog_sg.security_group_id]
 
   subnet_id = module.blog_vpc.public_subnets[0]
 
@@ -45,7 +45,7 @@ resource "aws_instance" "blog" {
   }
 }
 
-module "blog" {
+module "blog_sg" {
   source  = "terraform-aws-modules/security-group/aws"
   version = "5.3.1"
   name    = "blog_new"
@@ -57,4 +57,42 @@ module "blog" {
 
   egress_rules       = ["all-all"]
   egress_cidr_blocks = ["0.0.0.0/0"]
+}
+
+module "alb" {
+  source = "terraform-aws-modules/alb/aws"
+
+  name    = "blog-alb"
+  vpc_id  = module.blog_vpc.vpc_id
+  subnets = module.blog_vpc.public_subnets
+
+  # Security Group
+  security_groups = [module.blog_sg.security_group_id]
+
+  listeners = {
+    blog-http = {
+      port     = 80
+      protocol = "HTTP"
+      forward = {
+        target_group_arn = aws_lb_target_group.blog.arn
+      }
+    }
+  }
+
+  tags = {
+    Environment = "dev"
+  }
+}
+
+resource "aws_lb_target_group" "blog" {
+  name     = "blog"
+  port     = 80
+  protocol = "HTTP"
+  vpc_id   = module.blog_vpc.vpc_id
+}
+
+resource "aws_lb_target_group_attachment" "blog" {
+  target_group_arn = aws_lb_target_group.blog.arn
+  target_id        = aws_instance.blog.id
+  port             = 80
 }
